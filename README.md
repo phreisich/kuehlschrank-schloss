@@ -1,1 +1,1 @@
-# kuehlschrank-schloss
+# Kühlschrankschloss
