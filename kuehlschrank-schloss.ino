@@ -16,10 +16,17 @@ Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 #define ADDFINGER 7
 #define DELFINGER 8
 #define DELALL    9
+#define COIN_PIN  10
 #define TIMEOUT   5000 //in ms
 
 int16_t id;
 unsigned long sysTime;
+
+uint8_t readnumber(void);
+uint8_t deleteFingerprint(uint8_t);
+uint8_t get_ID_count(void);
+int getFingerprintIDez(void);
+uint8_t getFingerprintEnroll(void);
 
 void setup()
 {
@@ -27,9 +34,10 @@ void setup()
   while (!Serial);  // For Yun/Leo/Micro/Zero/...
   delay(100);
 
-  for (uint8_t i = 7; i <= 9; i++) {
+  for (uint8_t i = 7; i <= 10; i++) {
     pinMode(i, INPUT_PULLUP);
   }
+
 
   uint8_t flag = 0;
 
@@ -69,6 +77,8 @@ uint8_t get_ID_count() {
 
 
 
+//spannungsteiler für münzerkennung (links r1, rechts r2), anzahl pulse (1 2€, 2 1€, 3 50ctm 4 20ct, 5 10ct)
+
 
 uint8_t readnumber(void) {
   uint8_t num = 0;
@@ -82,10 +92,16 @@ uint8_t readnumber(void) {
 
 void loop()                     // run over and over again
 {
+  uint8_t test = !digitalRead(COIN_PIN);
+
+  if(test)
+    Serial.println("EINGANG");
+  /*
   //pins einlesen
   uint8_t delFingerMode = !digitalRead(DELFINGER);
   uint8_t addFingerMode = !digitalRead(ADDFINGER);
   uint8_t delAllMode = !digitalRead(DELALL);
+  
 
   if (addFingerMode) {
     Serial.println("Ready to enroll a fingerprint!");
@@ -128,6 +144,7 @@ void loop()                     // run over and over again
     getFingerprintIDez();
     delay(50);            //don't need to run this at full speed.
   }
+  */
 }
 
 uint8_t getFingerprintID() {
@@ -378,7 +395,7 @@ uint8_t getFingerprintEnroll() {
   }
 }
 
-}
+
 
 uint8_t deleteFingerprint(uint8_t id) {
   uint8_t p = -1;
