@@ -5,18 +5,23 @@
 // #define mySerial Serial1
 
 // For UNO and others without hardware serial, we must use software serial...
-// pin #2 is IN from sensor (GREEN wire)
-// pin #3 is OUT from arduino  (WHITE wire)
+// pin #4 is IN from sensor (BLACK wire)
+// pin #5 is OUT from arduino  (WHITE wire)
 // comment these two lines if using hardware serial
-SoftwareSerial mySerial(2, 3);
+
+//V+ ROT
+//V- Schwarz
+//TX gelb pin5
+//RX weiß pin4
+SoftwareSerial mySerial(4, 5);
 
 Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
 
 //pin definition
-#define ADDFINGER 7
+#define BUTTONPIN    7
 #define DELFINGER 8
-#define DELALL    9
-#define COIN_PIN  10
+#define COIN_PIN  2
+#define SCHLOSS 6
 #define TIMEOUT   5000 //in ms
 
 int16_t id;
@@ -28,16 +33,21 @@ uint8_t get_ID_count(void);
 int getFingerprintIDez(void);
 uint8_t getFingerprintEnroll(void);
 
+volatile uint8_t pulseCount = 0;
+volatile unsigned long lastEdgeTime = 0;
+
 void setup()
 {
   Serial.begin(9600);
   while (!Serial);  // For Yun/Leo/Micro/Zero/...
   delay(100);
 
-  for (uint8_t i = 7; i <= 10; i++) {
-    pinMode(i, INPUT_PULLUP);
-  }
-
+  
+  pinMode(COIN_PIN, INPUT_PULLUP);
+  pinMode(DELFINGER, INPUT_PULLUP);
+  pinMode(SCHLOSS, OUTPUT);
+  pinMode(BUTTONPIN, INPUT_PULLUP);
+  digitalWrite(COIN_PIN, HIGH);
 
   uint8_t flag = 0;
 
@@ -63,10 +73,27 @@ void setup()
   Serial.println(" templates");
   Serial.println("Waiting for valid finger...");
 
-
   
 
-  uint8_t addFingerMode, delFingerMode, delAllMode;
+
+  uint8_t addFingerMode, delFingerMode, button;
+  
+  attachInterrupt(digitalPinToInterrupt(COIN_PIN), interrupt, RISING);
+
+  if (!digitalRead(BUTTONPIN)) {
+    unsigned long startTime = millis();
+    Serial.println("Knopf 5s drücken um alle Fingerabdrücke zu löschen!");
+    while (!digitalRead(BUTTONPIN)) {
+      
+      if (millis() - startTime > 5000) {
+        Serial.println("Lösche alle Fingerabdrücke!");
+        finger.emptyDatabase();
+        delay(2000);
+        break;
+      }
+    }
+  }
+
 
 }
 
@@ -78,7 +105,7 @@ uint8_t get_ID_count() {
 
 
 //spannungsteiler für münzerkennung (links r1, rechts r2), anzahl pulse (1 2€, 2 1€, 3 50ctm 4 20ct, 5 10ct)
-
+//völlig überflüssig, output sind bereits 5V...
 
 uint8_t readnumber(void) {
   uint8_t num = 0;
@@ -90,20 +117,63 @@ uint8_t readnumber(void) {
   return num;
 }
 
+void countPulse() {
+  double moneyIn = 0;
+  static double gesamt = 0;
+  if (pulseCount && millis() - lastEdgeTime >= 200) {
+    switch (pulseCount) {
+      case 1:
+        moneyIn = 2.00;
+        break;
+      case 2:
+        moneyIn = 1.00;
+        break;
+      case 3:
+        moneyIn = 0.50;
+        break;
+      case 4:
+        moneyIn = 0.20;
+        break;
+      case 5:
+        moneyIn = 0.10;
+        break;
+      default:
+        Serial.println("Error!");
+        break;
+
+
+    }
+
+    pulseCount = 0;
+    gesamt = gesamt + moneyIn;
+    Serial.print(moneyIn);
+    Serial.println("€ eingeworfen");
+    Serial.print("Insgesamt: ");
+    Serial.println(gesamt);
+    if (gesamt >= 1.00){
+      Serial.println("Öffne Schloss");
+      gesamt = 0;
+      digitalWrite(SCHLOSS, HIGH);
+      delay(2000);
+      digitalWrite(SCHLOSS, LOW);
+      }
+  }
+}
+
 void loop()                     // run over and over again
 {
-  uint8_t test = !digitalRead(COIN_PIN);
 
-  if(test)
-    Serial.println("EINGANG");
   /*
+    uint8_t test = !digitalRead(COIN_PIN);
+
+    if(test)
+    Serial.println("EINGANG");
+  */
+  countPulse();
   //pins einlesen
   uint8_t delFingerMode = !digitalRead(DELFINGER);
-  uint8_t addFingerMode = !digitalRead(ADDFINGER);
-  uint8_t delAllMode = !digitalRead(DELALL);
-  
-
-  if (addFingerMode) {
+  uint8_t button = !digitalRead(BUTTONPIN);
+  if (button) {
     Serial.println("Ready to enroll a fingerprint!");
 
     // muss geändert werden, damit existierende id nicht ueberschrieben wird------------------
@@ -114,7 +184,8 @@ void loop()                     // run over and over again
     Serial.print("Enrolling ID #");
     Serial.println(id);
 
-    while (!getFingerprintEnroll());
+    getFingerprintEnroll();
+    delay(2000);
 
   }
   else if (delFingerMode) {
@@ -137,14 +208,17 @@ void loop()                     // run over and over again
       Serial.println("Kein Finger gegeben!");
     }
   }
-  //alle finger loeschen
-  //else if(delAllMode)
-  //  delAll();
+
   else {
-    getFingerprintIDez();
+    if(getFingerprintIDez()>0){
+      Serial.println("Öffne Schloss");
+      digitalWrite(SCHLOSS, HIGH);
+      delay(2000);
+      digitalWrite(SCHLOSS, LOW);
+    }
     delay(50);            //don't need to run this at full speed.
   }
-  */
+
 }
 
 uint8_t getFingerprintID() {
@@ -241,7 +315,6 @@ uint8_t getFingerprintEnroll() {
 
   Serial.print("Waiting for valid finger to enroll as #");
   Serial.println(id);
-
   sysTime = millis();
   while (p != FINGERPRINT_OK) {
     p = finger.getImage();
@@ -418,4 +491,9 @@ uint8_t deleteFingerprint(uint8_t id) {
     Serial.println(p, HEX);
     return p;
   }
+}
+
+void interrupt() {
+  lastEdgeTime = millis();
+  pulseCount++;
 }
